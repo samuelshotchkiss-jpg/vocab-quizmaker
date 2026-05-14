@@ -43,3 +43,5 @@ Install the dependencies:
 ```bash
 pip install -r requirements.txt
 ```
+
+This project is open-source and available under the GNU General Public License v3.0 (GPL-3.0).
