@@ -1,0 +1,14 @@
+# Environments
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Ignore generated PDFs so you don't accidentally upload your students' quizzes
+*.pdf
