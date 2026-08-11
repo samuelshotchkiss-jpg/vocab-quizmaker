@@ -12,6 +12,34 @@ Originally designed for Latin pedagogy, this tool easily accommodates long vocab
 * **Dynamic Layouts**: Automatically calculates text-wrapping and shifts answer lines downward to accommodate multi-line entries (e.g., *afferō, afferre, abstulī, ālātum*).
 * **Cross-Platform Unicode**: Automatically detects macOS or Windows to embed native system fonts (Times New Roman) so macrons and diacritics render perfectly.
 * **Auto-Open**: Automatically launches the generated PDF in your default system viewer for rapid printing.
+* **Two kinds of quiz**: the classic 20-word, two-column sheet, or a *context* quiz — ten words a page, up to two pages, each word printed under a line of the Latin it was met in.
+
+## 📖 The context quiz
+
+The classic quiz asks for a headword and gives an answer line. The context quiz gives the poetry
+around the word as well:
+
+```
+1.  accēdō, accēdere, accessī, accessum   ______________________________
+
+      accēdet fātīs mātris miserābilis īnfāns,
+      et nōndum nātō fūneris auctor eris,
+      cumque parente suā frāter moriētur Iūlī, (Ovid, Her. 7.135)
+```
+
+Deciding *which* of a word's occurrences a student should meet takes more than the word list —
+it depends on what the class has already read and in what order — so this app does not compute
+it. The context arrives ready-made as JSON, from the Latin Vocab Toolkit:
+
+```bash
+python engine/cycles.py quiz --clipboard
+```
+
+Then use **Import from Clipboard** as usual. The importer sniffs the format, so a tab-separated
+word list still makes a classic quiz and nothing about that path changes; the **Quiz type**
+choice only offers *With context* when the import actually carried context.
+
+Layout, and the reason it is not a column: see `context_quiz.py`.
 
 ## 📋 Prerequisites
 * Python 3.9 or higher

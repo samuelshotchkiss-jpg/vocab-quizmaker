@@ -11,9 +11,9 @@ import os
 import platform  # <--- ADD THIS LINE
 
 # --- PyQt6 UI and Utility Imports ---
-from PyQt6.QtWidgets import (QApplication, QWidget, QLabel, QPushButton, 
+from PyQt6.QtWidgets import (QApplication, QWidget, QLabel, QPushButton,
                              QVBoxLayout, QFileDialog, QMessageBox,
-                             QLineEdit, QCheckBox)
+                             QLineEdit, QCheckBox, QRadioButton, QButtonGroup)
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtCore import Qt, QUrl
 
@@ -25,6 +25,13 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import Paragraph
+
+# --- The second kind of quiz: words shown in a line of the Latin they came from. ---
+# It lives in its own module so that adding it cannot disturb the layout above, which works.
+# The context itself is not computed here -- it arrives as JSON from the Latin Vocab Toolkit
+# (`python engine/cycles.py quiz --clipboard`), because choosing WHICH occurrence a student
+# should see depends on what the class has been taught and in what order. See context_quiz.py.
+import context_quiz
 
 class VocabQuizApp(QWidget):
     def __init__(self):
@@ -68,7 +75,8 @@ class VocabQuizApp(QWidget):
             print("Warning: Times New Roman not found on this system. Macrons might break.")
 
         self.vocab_list =[]
-        
+        self.context_items =[]   # the same words WITH their Latin context, when the import had it
+
         # --- UI LAYOUT ---
         layout = QVBoxLayout()
 
@@ -85,6 +93,26 @@ class VocabQuizApp(QWidget):
 
         self.input_title = QLineEdit("Latin Vocabulary Trial") # Default text
         layout.addWidget(self.input_title)
+
+        # 2b. Which kind of quiz. Classic is the default and is never taken away: a plain
+        # two-column TSV import can only make that one, so the context choice stays disabled
+        # until an import actually carries context.
+        self.lbl_kind = QLabel("Quiz type:")
+        self.lbl_kind.setStyleSheet("font-weight: bold; color: #333333;")
+        layout.addWidget(self.lbl_kind)
+
+        self.radio_classic = QRadioButton("Classic — 20 words, two columns, one page")
+        self.radio_context = QRadioButton("With context — 10 per page, up to 2 pages")
+        self.radio_classic.setChecked(True)
+        self.radio_context.setEnabled(False)
+        self.radio_context.setToolTip(
+            "Needs a context import: run `python engine/cycles.py quiz --clipboard` in the "
+            "Latin Vocab Toolkit, then Import from Clipboard.")
+        self.kind_group = QButtonGroup(self)
+        self.kind_group.addButton(self.radio_classic)
+        self.kind_group.addButton(self.radio_context)
+        layout.addWidget(self.radio_classic)
+        layout.addWidget(self.radio_context)
 
         # 3. Auto-Open Checkbox
         self.check_open = QCheckBox("Open PDF automatically after generating")
@@ -107,7 +135,7 @@ class VocabQuizApp(QWidget):
         layout.addWidget(self.btn_generate)
 
         # 5. Info Label
-        self.lbl_info = QLabel("Requires Tab-Separated format (Term -> Definition)")
+        self.lbl_info = QLabel("Tab-Separated (Term -> Definition), or context JSON from the toolkit")
         self.lbl_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_info.setStyleSheet("font-size: 10pt; color: gray;")
         layout.addWidget(self.lbl_info)
@@ -131,10 +159,39 @@ class VocabQuizApp(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to parse data: {e}")
             return []
+    def load_data(self, content):
+        """Read an import in whichever format it is in.
+
+        SNIFFED, not chosen from a menu. A tab-separated word list does not begin with '{', so
+        one Import button keeps serving both -- the same decision the survey app made when its
+        parser stopped demanding a header row. A context import fills BOTH lists, so either
+        kind of quiz can still be made from it; a TSV import can only make the classic one.
+        """
+        try:
+            items = context_quiz.parse_payload(content)
+        except ValueError as e:
+            QMessageBox.critical(self, "Error", f"That context file is malformed: {e}")
+            return
+        if items is None:
+            self.context_items = []
+            self.vocab_list = self.parse_tsv_data(content)
+        else:
+            self.context_items = items
+            self.vocab_list = [(context_quiz.plain(i["latin"]),
+                                context_quiz.plain(i.get("english") or "—")) for i in items]
+        self.update_status()
+
     def update_status(self):
         count = len(self.vocab_list)
+        has_context = bool(self.context_items)
+        self.radio_context.setEnabled(has_context)
+        if has_context:
+            self.radio_context.setChecked(True)
+        else:
+            self.radio_classic.setChecked(True)
         if count > 0:
-            self.label_status.setText(f"Loaded {count} items successfully.")
+            kind = " with context" if has_context else ""
+            self.label_status.setText(f"Loaded {count} items{kind} successfully.")
             self.label_status.setStyleSheet("color: green; padding: 10px;")
             self.btn_generate.setEnabled(True)
         else:
@@ -148,16 +205,13 @@ class VocabQuizApp(QWidget):
         if not content:
             QMessageBox.warning(self, "Error", "Clipboard is empty.")
             return
-        self.vocab_list = self.parse_tsv_data(content)
-        self.update_status()
+        self.load_data(content)
 
     def load_from_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open File", "", "TSV Files (*.tsv *.txt);;All Files (*)")
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open File", "", "Quiz data (*.tsv *.txt *.json);;All Files (*)")
         if file_path:
             with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                self.vocab_list = self.parse_tsv_data(content)
-                self.update_status()
+                self.load_data(f.read())
 
     def generate_pdf(self):
         if not self.vocab_list:
@@ -168,16 +222,35 @@ class VocabQuizApp(QWidget):
         if not quiz_title.strip():
             quiz_title = "Latin Vocabulary Quiz"
 
-        num_items = min(20, len(self.vocab_list))
-        quiz_items = random.sample(self.vocab_list, num_items)
+        with_context = self.radio_context.isChecked() and self.context_items
 
-        save_path, _ = QFileDialog.getSaveFileName(self, "Save PDF", "latin_quiz.pdf", "PDF Files (*.pdf)")
+        if with_context:
+            # Two pages of ten. The toolkit sends the whole cumulative list; the sampling is
+            # this app's job either way, exactly as it is for the classic quiz.
+            cap = context_quiz.ITEMS_PER_PAGE * context_quiz.MAX_PAGES
+            quiz_items = random.sample(self.context_items, min(cap, len(self.context_items)))
+            default_name = "latin_quiz_context.pdf"
+        else:
+            num_items = min(20, len(self.vocab_list))
+            quiz_items = random.sample(self.vocab_list, num_items)
+            default_name = "latin_quiz.pdf"
+
+        save_path, _ = QFileDialog.getSaveFileName(self, "Save PDF", default_name, "PDF Files (*.pdf)")
         if not save_path:
             return
 
         try:
-            self.create_pdf_layout(save_path, quiz_items, quiz_title)
-            
+            if with_context:
+                context_quiz.build(save_path, quiz_items, quiz_title, self.font_name)
+                lost = context_quiz.missing_faces(self.font_name)
+                if lost:
+                    QMessageBox.warning(self, "Bold unavailable",
+                                        "This machine has no bold face for the quiz font, so the "
+                                        "headwords and the quizzed words are set in regular type:\n"
+                                        + ", ".join(lost))
+            else:
+                self.create_pdf_layout(save_path, quiz_items, quiz_title)
+
             # Check the box state for auto-opening
             if self.check_open.isChecked():
                 QDesktopServices.openUrl(QUrl.fromLocalFile(save_path))
