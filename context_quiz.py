@@ -74,11 +74,24 @@ def plain(markup: str) -> str:
 
 # --- the payload --------------------------------------------------------------
 
+def ctx_row(line):
+    """One context line as {text, indent}, however the payload spelled it.
+
+    `indent` is the words clipped off the FRONT of that verse line, because the quoted sentence
+    starts partway into it. It is plain text and is never drawn -- it is here to be MEASURED, so
+    the fragment can be set at the horizontal position those words would have occupied and the
+    verse keeps its shape. A bare string (payload version 1) means no indent.
+    """
+    if isinstance(line, str):
+        return {"text": line, "indent": ""}
+    return {"text": line.get("text") or "", "indent": line.get("indent") or ""}
+
+
 def parse_payload(text: str):
     """The toolkit's context-quiz JSON, or None if this is not that.
 
     Returns the list of items, each a dict with `latin` (the headword), `english`, `context`
-    (a list of lines of poetry, the quizzed word wrapped in <b>), and `citation`. Everything is
+    (the lines of poetry, the quizzed word wrapped in <b>), and `citation`. Everything is
     already in ReportLab's mini-HTML dialect, rendered by the toolkit -- the same arrangement as
     the survey app, which is sent HTML rather than being taught the markup rules.
 
@@ -161,12 +174,12 @@ def _styles(font: str):
 
 
 def _item_flowables(item, styles, width):
-    """(headword paragraph, [context paragraphs], headword width) for one word."""
+    """(headword paragraph, [(context paragraph, indent)], headword width) for one word."""
     head_style, ctx_style = styles
     head = Paragraph(f"<b>{item['latin']}</b>", head_style)
-    lines = list(item.get("context") or [])
+    rows = [ctx_row(l) for l in (item.get("context") or [])]
     cit = item.get("citation")
-    if cit and lines:
+    if cit and rows:
         # The citation rides on the END of the last line rather than taking a line of its own:
         # it is a label on the quotation, and ten of them in a column would read as content.
         #
@@ -175,8 +188,10 @@ def _item_flowables(item, styles, width):
         # and line numbers, and not these parentheses. Wrapping the lot in <i> is what this line
         # used to do, and it printed (Ovid, Met. 8.186) entirely in italic: a citation style the
         # teacher would mark down, modelled ten times a page in front of the class.
-        lines[-1] = f"{lines[-1]} ({cit})"
-    ctx = [Paragraph(l, ctx_style) for l in lines]
+        rows[-1]["text"] = f"{rows[-1]['text']} ({cit})"
+    ctx = [(Paragraph(r["text"], ctx_style),
+            pdfmetrics.stringWidth(r["indent"], ctx_style.fontName, CTX_SIZE))
+           for r in rows]
     head_w = pdfmetrics.stringWidth(plain(item["latin"]), _bold_name(head_style.fontName),
                                     HEAD_SIZE)
     return head, ctx, head_w
@@ -188,10 +203,14 @@ def _bold_name(base: str) -> str:
 
 
 def _measure(head, ctx, width):
-    """Height of one item once everything has been wrapped to `width`."""
+    """Height of one item once everything has been wrapped to `width`.
+
+    Wraps at exactly the width each line will be DRAWN at -- an indented line has that much
+    less room, and measuring it wider would under-count a wrap and overlap the item below.
+    """
     h = head.wrap(width - NUM_W, PAGE_H)[1]
-    for p in ctx:
-        h += p.wrap(width - NUM_W - CTX_INDENT, PAGE_H)[1]
+    for p, indent in ctx:
+        h += p.wrap(width - NUM_W - CTX_INDENT - indent, PAGE_H)[1]
     return h + HEAD_TO_CTX
 
 
@@ -232,8 +251,8 @@ def build(path, items, title, font, name_line=True):
                 c.line(start, base_y, MARGIN + content_w, base_y)
             y -= head.height + HEAD_TO_CTX
 
-            for p in ctx:
-                p.drawOn(c, x_text + CTX_INDENT, y - p.height)
+            for p, indent in ctx:
+                p.drawOn(c, x_text + CTX_INDENT + indent, y - p.height)
                 y -= p.height
             y -= gap
 
