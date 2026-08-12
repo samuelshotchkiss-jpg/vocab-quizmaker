@@ -4,11 +4,11 @@ The classic quiz asks for twenty headwords in two columns and fits on one side o
 one asks for the same words with the poetry around them, which does not fit in a column: ten to a
 page, one column, up to two pages -- a single double-sided sheet.
 
-    1.  accedo, accedere, accessi, accessum   ______________________________
+    1.  accēdō, accēdere, accessī, accessum   ______________________________
 
-        accedet fatis matris miserabilis infans,
-        et nondum nato funeris auctor eris,
-        cumque parente sua frater morietur Iuli, (Ovid, Her. 7.135)
+        accēdet fātīs mātris miserābilis īnfāns,
+        et nōndum nātō fūneris auctor eris,
+        cumque parente suā frāter moriētur Iūlī, (Ov. Her. 7.135)
 
 THE CONTEXT IS NOT COMPUTED HERE, and it could not be. Which of a word's occurrences a student
 should meet depends on what the class has been taught and in what order, which lives in the Latin
@@ -151,7 +151,7 @@ def parse_context_tsv(rows):
     the title of a work in the citation, and `/` (or `\\n`) separates verse lines, because a
     cell cannot contain a real one.
 
-        volō, volāre	to fly	inter utrumque **volā**. / nec tē spectāre Boōtēn	Ov., *Met.* 8.206
+        volō, volāre	to fly	inter utrumque **volā**. / nec tē spectāre Boōtēn	Ov. *Met.* 8.206
 
     A row with only two columns is kept and simply prints without a context, so a part-converted
     list still makes a quiz rather than being refused.

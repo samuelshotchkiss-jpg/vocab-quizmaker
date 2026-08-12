@@ -24,7 +24,7 @@ around the word as well:
 
       accēdet fātīs mātris miserābilis īnfāns,
       et nōndum nātō fūneris auctor eris,
-      cumque parente suā frāter moriētur Iūlī, (Ovid, Her. 7.135)
+      cumque parente suā frāter moriētur Iūlī, (Ov. Her. 7.135)
 ```
 
 There are two ways to feed it.
@@ -32,7 +32,7 @@ There are two ways to feed it.
 ### From a spreadsheet — add a third column
 
 ```
-volō, volāre	to fly	inter utrumque **volā**. / nec tē spectāre Boōtēn	Ov., *Met.* 8.206
+volō, volāre	to fly	inter utrumque **volā**. / nec tē spectāre Boōtēn	Ov. *Met.* 8.206
 ```
 
 `headword` · `meaning` · `context` · `citation` (the fourth is optional). Inside the context
