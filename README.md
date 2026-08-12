@@ -27,17 +27,39 @@ around the word as well:
       cumque parente suā frāter moriētur Iūlī, (Ovid, Her. 7.135)
 ```
 
+There are two ways to feed it.
+
+### From a spreadsheet — add a third column
+
+```
+volō, volāre	to fly	inter utrumque **volā**. / nec tē spectāre Boōtēn	Ov., *Met.* 8.206
+```
+
+`headword` · `meaning` · `context` · `citation` (the fourth is optional). Inside the context
+cell, `**word**` marks the word being quizzed and `/` starts a new line of verse — a cell cannot
+hold a real line break. `*italic*` works in any column, which is how the title of a work is set
+in a citation. A row with only two columns still prints; it just has no context, so a list you
+are halfway through converting still makes a quiz.
+
+### From the Latin Vocab Toolkit
+
 Deciding *which* of a word's occurrences a student should meet takes more than the word list —
-it depends on what the class has already read and in what order — so this app does not compute
-it. The context arrives ready-made as JSON, from the Latin Vocab Toolkit:
+it depends on what the class has already read and in what order — so the toolkit chooses, and
+also macronizes the line and clips it to its sentence:
 
 ```bash
 python engine/cycles.py quiz --clipboard
 ```
 
-Then use **Import from Clipboard** as usual. The importer sniffs the format, so a tab-separated
-word list still makes a classic quiz and nothing about that path changes; the **Quiz type**
-choice only offers *With context* when the import actually carried context.
+It names the sheet too: the title box is filled with *Vocab Trial: Ov.* Met. *8.183–209* — the
+lines the class has just read.
+
+### Either way
+
+Use **Import from Clipboard** (or *Import from TSV File*) as usual. The importer sniffs the
+format, so a plain two-column word list still makes a classic quiz and nothing about that path
+changes; the **Quiz type** choice only offers *With context* when the import actually carried
+context.
 
 Layout, and the reason it is not a column: see `context_quiz.py`.
 

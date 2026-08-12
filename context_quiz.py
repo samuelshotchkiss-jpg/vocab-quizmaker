@@ -63,6 +63,13 @@ MAX_ITEM_GAP = 26   # do not let four items drift to the corners of an empty pag
 _TAG = re.compile(r"<[^>]+>")
 _ENTITY = {"&amp;": "&", "&lt;": "<", "&gt;": ">"}
 
+_MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
+_MD_ITALIC = re.compile(r"\*(.+?)\*")
+# A verse line break inside one spreadsheet cell. `/` is what a classicist already writes when
+# quoting verse in running text, and `\n` is what anyone else reaches for; a cell cannot hold a
+# real newline, so both are accepted. (A stray `/` in Latin is not a thing that happens.)
+_VERSE_BREAK = re.compile(r"\s*/\s*|\\n")
+
 
 def plain(markup: str) -> str:
     """The text without its tags -- for measuring, never for drawing."""
@@ -70,6 +77,21 @@ def plain(markup: str) -> str:
     for k, v in _ENTITY.items():
         out = out.replace(k, v)
     return out
+
+
+def markup(s: str) -> str:
+    """Hand-typed text -> the mini-HTML a Paragraph parses. `**bold**`, `*italic*`.
+
+    ESCAPE FIRST, THEN MARK UP -- the same order and the same reason as everywhere else: a bare
+    `&` in a definition is a parse error to Paragraph, and escaping afterwards would escape the
+    tags we just inserted. Which also means a teacher's file is markdown, not HTML: typing
+    `<i>` gets you a visible `<i>`, and that is the honest trade for never crashing on `&`.
+
+    Bold before italic, or `**word**` loses its inner pair to the single-asterisk rule.
+    """
+    out = (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    out = _MD_BOLD.sub(r"<b>\1</b>", out)
+    return _MD_ITALIC.sub(r"<i>\1</i>", out)
 
 
 # --- the payload --------------------------------------------------------------
@@ -88,9 +110,10 @@ def ctx_row(line):
 
 
 def parse_payload(text: str):
-    """The toolkit's context-quiz JSON, or None if this is not that.
+    """The toolkit's context-quiz payload, or None if this is not that.
 
-    Returns the list of items, each a dict with `latin` (the headword), `english`, `context`
+    Returns the whole dict -- `items`, and a `title` naming the lines the class has just read,
+    which only the toolkit can know. Each item has `latin` (the headword), `english`, `context`
     (the lines of poetry, the quizzed word wrapped in <b>), and `citation`. Everything is
     already in ReportLab's mini-HTML dialect, rendered by the toolkit -- the same arrangement as
     the survey app, which is sent HTML rather than being taught the markup rules.
@@ -107,11 +130,47 @@ def parse_payload(text: str):
         return None
     if not isinstance(data, dict) or data.get("format") != FORMAT:
         return None
-    items = data.get("items") or []
-    for i, it in enumerate(items):
+    for i, it in enumerate(data.get("items") or []):
         if not it.get("latin") or not it.get("context"):
             raise ValueError(f"item {i + 1} has no headword or no context")
-    return items
+    return data
+
+
+def parse_context_tsv(rows):
+    """A hand-made context quiz: `headword TAB meaning TAB context [TAB citation]`.
+
+    Returns items, or None if no row carries a context -- in which case this is an ordinary
+    two-column word list and nothing here applies.
+
+    FOR THE TERM BEFORE THE TOOLKIT. A teacher who wants contextual quizzes now should not have
+    to move his whole vocabulary into a store first, so the third column is all it takes. What
+    the toolkit adds is the part a spreadsheet cannot do: choosing WHICH occurrence, macronizing
+    it, and clipping it to its sentence. Typed by hand, the context is whatever was typed.
+
+    The dialect is the one a spreadsheet can hold: `**bold**` marks the quizzed word, `*italic*`
+    the title of a work in the citation, and `/` (or `\\n`) separates verse lines, because a
+    cell cannot contain a real one.
+
+        volō, volāre	to fly	inter utrumque **volā**. / nec tē spectāre Boōtēn	Ov., *Met.* 8.206
+
+    A row with only two columns is kept and simply prints without a context, so a part-converted
+    list still makes a quiz rather than being refused.
+    """
+    items, any_context = [], False
+    for row in rows:
+        if len(row) < 2 or not row[0].strip():
+            continue
+        ctx_cell = row[2].strip() if len(row) > 2 else ""
+        cit_cell = row[3].strip() if len(row) > 3 else ""
+        lines = [markup(l) for l in _VERSE_BREAK.split(ctx_cell) if l.strip()]
+        any_context = any_context or bool(lines)
+        items.append({
+            "latin": markup(row[0].strip()),
+            "english": markup(row[1].strip()),
+            "context": [{"text": l, "indent": ""} for l in lines],
+            "citation": markup(cit_cell) if cit_cell else "",
+        })
+    return items if any_context else None
 
 
 # --- fonts --------------------------------------------------------------------
@@ -202,6 +261,51 @@ def _bold_name(base: str) -> str:
     return name if name in pdfmetrics.getRegisteredFontNames() else base
 
 
+def _italic_name(base: str) -> str:
+    name = base + "-Italic"
+    return name if name in pdfmetrics.getRegisteredFontNames() else base
+
+
+_SEG = re.compile(r"<(/?)([bi])>")
+
+
+def _draw_rich(c, x, y, s, font, size):
+    """Draw `<i>`/`<b>` text on a BASELINE, and return where it ended.
+
+    A Paragraph would also render the tags, but it is placed by its box rather than its
+    baseline, and the title has to sit on the same line as the name and date drawn beside it
+    with drawString. Splitting the runs by hand keeps that alignment exact -- the alternative
+    is guessing a Paragraph's internal leading, which is how a heading ends up two points off
+    its neighbours for reasons nobody can find later.
+    """
+    pos, bold, ital = 0, False, False
+    for m in list(_SEG.finditer(s)) + [None]:
+        piece = s[pos:m.start()] if m else s[pos:]
+        if piece:
+            face = font
+            if bold and ital:
+                face = font + "-BoldItalic"
+            elif bold:
+                face = _bold_name(font)
+            elif ital:
+                face = _italic_name(font)
+            if face not in pdfmetrics.getRegisteredFontNames():
+                face = font
+            piece = plain(piece)
+            c.setFont(face, size)
+            c.drawString(x, y, piece)
+            x += pdfmetrics.stringWidth(piece, face, size)
+        if not m:
+            break
+        closing, tag = m.group(1), m.group(2)
+        if tag == "b":
+            bold = not closing
+        else:
+            ital = not closing
+        pos = m.end()
+    return x
+
+
 def _measure(head, ctx, width):
     """Height of one item once everything has been wrapped to `width`.
 
@@ -267,16 +371,16 @@ def _header(c, title, font, first: bool, name_line: bool) -> float:
     """Draw the page header; return the y the first item starts at."""
     top = PAGE_H - MARGIN
     if first:
-        c.setFont(font, 18)
-        c.drawString(MARGIN, top, title)
+        # The title arrives as the teacher would type it -- `Vocab Trial: Ov. *Met.* 8.183–209`,
+        # which is also what the toolkit fills the box with -- so the markers are rendered here.
+        _draw_rich(c, MARGIN, top, markup(title), font, 18)
         if name_line:
             c.setFont(font, 12)
             c.drawRightString(PAGE_W - MARGIN, top, "Nōmen mihi est: _________________")
             c.drawRightString(PAGE_W - MARGIN, top - 20, "Diēs: __________________")
         rule = top - (40 if name_line else 12)
     else:
-        c.setFont(font, 10)
-        c.drawString(MARGIN, top, title)
+        _draw_rich(c, MARGIN, top, markup(title), font, 10)
         rule = top - 12
     c.setLineWidth(0.5)
     c.line(MARGIN, rule, PAGE_W - MARGIN, rule)

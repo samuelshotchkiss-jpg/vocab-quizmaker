@@ -159,19 +159,47 @@ class VocabQuizApp(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to parse data: {e}")
             return []
+
+    def tsv_rows(self, data_string):
+        """Every row, columns intact — the context importer needs the third one.
+
+        QUOTE_NONE, because a line of Latin verse often opens with a quotation mark and the
+        default dialect would eat it: `"Pȳrame," clāmāvit` arrives as `Pȳrame, clāmāvit`. The
+        same bite the toolkit took on its frozen text file. Nothing here is quoted, and a field
+        containing a tab is not a thing a spreadsheet will hand us.
+        """
+        try:
+            return [r for r in csv.reader(io.StringIO(data_string), delimiter='\t',
+                                          quoting=csv.QUOTE_NONE)]
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to parse data: {e}")
+            return []
     def load_data(self, content):
         """Read an import in whichever format it is in.
 
         SNIFFED, not chosen from a menu. A tab-separated word list does not begin with '{', so
-        one Import button keeps serving both -- the same decision the survey app made when its
-        parser stopped demanding a header row. A context import fills BOTH lists, so either
-        kind of quiz can still be made from it; a TSV import can only make the classic one.
+        one Import button keeps serving all three -- the same decision the survey app made when
+        its parser stopped demanding a header row. Three shapes reach here:
+
+          * the toolkit's context JSON — words, contexts, and a title naming the lines taught;
+          * a TSV with a third column — a hand-made context quiz (see parse_context_tsv);
+          * a plain two-column TSV — the classic quiz, exactly as before.
+
+        Anything carrying context fills BOTH lists, so either kind of quiz can be made from it.
         """
         try:
-            items = context_quiz.parse_payload(content)
+            payload = context_quiz.parse_payload(content)
         except ValueError as e:
             QMessageBox.critical(self, "Error", f"That context file is malformed: {e}")
             return
+        title = None
+        if payload is None:
+            items = context_quiz.parse_context_tsv(self.tsv_rows(content))
+        else:
+            items = payload.get("items") or []
+            # Only the toolkit knows what the class has just read, so only it names the sheet.
+            # A hand-made TSV leaves whatever is in the box alone.
+            title = payload.get("title")
         if items is None:
             self.context_items = []
             self.vocab_list = self.parse_tsv_data(content)
@@ -179,6 +207,8 @@ class VocabQuizApp(QWidget):
             self.context_items = items
             self.vocab_list = [(context_quiz.plain(i["latin"]),
                                 context_quiz.plain(i.get("english") or "—")) for i in items]
+        if title:
+            self.input_title.setText(title)
         self.update_status()
 
     def update_status(self):
