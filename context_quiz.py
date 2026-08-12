@@ -169,7 +169,13 @@ def _item_flowables(item, styles, width):
     if cit and lines:
         # The citation rides on the END of the last line rather than taking a line of its own:
         # it is a label on the quotation, and ten of them in a column would read as content.
-        lines[-1] = f"{lines[-1]} <i>({cit})</i>"
+        #
+        # DO NOT ITALICIZE IT HERE. The citation arrives already marked up, and the italic
+        # belongs to the TITLE OF THE WORK alone -- not the author's abbreviation, not the book
+        # and line numbers, and not these parentheses. Wrapping the lot in <i> is what this line
+        # used to do, and it printed (Ovid, Met. 8.186) entirely in italic: a citation style the
+        # teacher would mark down, modelled ten times a page in front of the class.
+        lines[-1] = f"{lines[-1]} ({cit})"
     ctx = [Paragraph(l, ctx_style) for l in lines]
     head_w = pdfmetrics.stringWidth(plain(item["latin"]), _bold_name(head_style.fontName),
                                     HEAD_SIZE)
